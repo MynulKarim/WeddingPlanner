@@ -40,22 +40,37 @@ export async function checkInGuest(
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  // Tenant guards: guest and event must belong to this wedding.
-  const [{ data: guest }, { data: event }] = await Promise.all([
-    supabase.from('guests').select('id').eq('id', guestId).eq('wedding_id', weddingId).maybeSingle(),
-    supabase.from('events').select('id').eq('id', eventId).eq('wedding_id', weddingId).maybeSingle(),
-  ]);
-  if (!guest || !event) return { error: 'Guest or event not found in this wedding.' };
-  const { error } = await supabase.from('checkins').upsert(
-    {
-      wedding_id: weddingId,
-      guest_id: guestId,
-      event_id: eventId,
-      checked_in_by: user?.id ?? null,
-    },
-    { onConflict: 'guest_id,event_id' },
-  );
-  if (error) return { error: error.message };
+  // One atomic call (migration 0020): tenant guards plus the upsert happen
+  // together instead of across three round-trips.
+  const { error } = await supabase.rpc('checkin_guest', {
+    p_wedding_id: weddingId,
+    p_guest_id: guestId,
+    p_event_id: eventId,
+    p_by: user?.id ?? null,
+  });
+  if (error) {
+    if (/NOT_FOUND/.test(error.message)) {
+      return { error: 'Guest or event not found in this wedding.' };
+    }
+    const { isMissingFunction } = await import('@/lib/db/schema-guard');
+    if (!isMissingFunction(error)) return { error: error.message };
+    // Pre-migration database: legacy guard-reads plus upsert.
+    const [{ data: guest }, { data: event }] = await Promise.all([
+      supabase.from('guests').select('id').eq('id', guestId).eq('wedding_id', weddingId).maybeSingle(),
+      supabase.from('events').select('id').eq('id', eventId).eq('wedding_id', weddingId).maybeSingle(),
+    ]);
+    if (!guest || !event) return { error: 'Guest or event not found in this wedding.' };
+    const { error: upsertError } = await supabase.from('checkins').upsert(
+      {
+        wedding_id: weddingId,
+        guest_id: guestId,
+        event_id: eventId,
+        checked_in_by: user?.id ?? null,
+      },
+      { onConflict: 'guest_id,event_id' },
+    );
+    if (upsertError) return { error: upsertError.message };
+  }
   revalidatePath(`/day-of/${weddingId}`);
   return {};
 }

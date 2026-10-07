@@ -16,10 +16,12 @@ export function StationeryStudio({
   weddingId,
   guests,
   events,
+  pdfReady,
 }: {
   weddingId: string;
   guests: { id: string; name: string }[];
   events: { id: string; name: string }[];
+  pdfReady: boolean;
 }) {
   const [guestId, setGuestId] = useState('');
   const [eventId, setEventId] = useState('');
@@ -85,12 +87,24 @@ export function StationeryStudio({
               >
                 Preview
               </a>
-              <a
-                href={href(doc, 'pdf')}
-                className="rounded-full bg-[#1a1a1a] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Download PDF
-              </a>
+              {pdfReady ? (
+                <a
+                  href={href(doc, 'pdf')}
+                  className="rounded-full bg-[#1a1a1a] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                >
+                  Download PDF
+                </a>
+              ) : (
+                <a
+                  href={href(doc, 'html')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="No PDF engine on this host — print from the preview instead."
+                  className="rounded-full bg-[#1a1a1a] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                >
+                  Print via preview
+                </a>
+              )}
             </div>
           </li>
         ))}

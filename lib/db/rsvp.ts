@@ -57,8 +57,10 @@ export async function submitRsvp(
   const errors = validateSubmission(scope, rules, submissions);
   if (errors.length > 0) return { errorKey: errors[0] };
 
-  const supabase = createServiceRoleClient();
-  for (const sub of submissions) {
+  // One atomic transaction for every event row (migration 0020): no torn
+  // multi-event state, and the deadline is re-read inside the transaction
+  // so a concurrent setDeadline cannot slip between check and write.
+  const rows = submissions.map((sub) => {
     const clean = normalizeSubmission(scope, sub);
     const answers: Record<string, string> = {};
     for (const q of rules) {
@@ -67,22 +69,38 @@ export async function submitRsvp(
         if (a) answers[q.id] = a.slice(0, 2000);
       }
     }
-    const { error } = await supabase.from('rsvps').upsert(
-      {
-        wedding_id: inv.weddingId,
-        guest_id: inv.guestId,
-        event_id: sub.eventId,
-        status: clean.status,
-        plus_one: clean.plusOne,
-        plus_one_name: clean.plusOneName || null,
-        dietary: clean.dietary || null,
-        allergies: clean.allergies || null,
-        notes: clean.notes || null,
-        answers,
-      },
-      { onConflict: 'guest_id,event_id' },
-    );
-    if (error) return { errorKey: 'err.failed' };
+    return {
+      event_id: sub.eventId,
+      status: clean.status,
+      plus_one: clean.plusOne,
+      plus_one_name: clean.plusOneName || null,
+      dietary: clean.dietary || null,
+      allergies: clean.allergies || null,
+      notes: clean.notes || null,
+      answers,
+    };
+  });
+  const supabase = createServiceRoleClient();
+  const { error } = await supabase.rpc('submit_rsvp_batch', {
+    p_wedding_id: inv.weddingId,
+    p_guest_id: inv.guestId,
+    p_rows: rows,
+  });
+  if (error) {
+    if (/RSVP_DEADLINE/.test(error.message)) return { errorKey: 'err.deadline' };
+    const { isMissingFunction } = await import('@/lib/db/schema-guard');
+    if (isMissingFunction(error)) {
+      // Pre-migration database: legacy per-event upserts (not atomic).
+      for (const row of rows) {
+        const { error: rowError } = await supabase.from('rsvps').upsert(
+          { wedding_id: inv.weddingId, guest_id: inv.guestId, ...row },
+          { onConflict: 'guest_id,event_id' },
+        );
+        if (rowError) return { errorKey: 'err.failed' };
+      }
+    } else {
+      return { errorKey: 'err.failed' };
+    }
   }
   // Refresh guest-visible state.
   await getGuestRsvps(inv);

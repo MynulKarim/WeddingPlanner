@@ -51,3 +51,19 @@ export async function chromiumAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Launch-failure matcher — Phase 16 (pure, unit-tested). Puppeteer reports
+ * a missing binary many ways across platforms ("Could not find Chrome",
+ * "Could not find expected browser", ENOENT on the executable, missing
+ * shared libraries on slim Linux images).
+ */
+export function isChromiumMissing(message: string): boolean {
+  return (
+    /could not find chrome/i.test(message) ||
+    /could not find expected browser/i.test(message) ||
+    /failed to launch/i.test(message) ||
+    (/ENOENT/i.test(message) && /chrome/i.test(message)) ||
+    /libnss3|libatk|libXss|libasound/i.test(message)
+  );
+}

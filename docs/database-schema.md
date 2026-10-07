@@ -35,6 +35,13 @@ checkins, thank-you notes. Each carries `wedding_id` + least-privilege RLS.
 - `vendor_payments(id, wedding_id, vendor_id FK CASCADE, amount_cents > 0, paid_on, note)` — installment line items; `sync_vendor_paid()` trigger rolls inserts/deletes into `vendors.paid_cents` atomically. Member-only.
 - `team_invites(id, wedding_id, email, role CHECK admin|planner|staff, invited_by, UNIQUE(wedding_id, email))` — pending team access; member read, admin write; consumed by auto-link on sign-in/registration. Never owner.
 
+## Phase 16 additions (migrations 0019–0020, invoker-rights RPCs)
+
+- `messages.status` gains transient `sending` + `claimed_at`; `claim_due_messages(p_now, p_limit, p_wedding_id)` atomically claims due rows (`FOR UPDATE SKIP LOCKED`, stale recovery after 10 min) so overlapping dispatchers never double-send.
+- `submit_rsvp_batch(p_wedding_id, p_guest_id, p_rows)` — all event rows in one transaction with the deadline re-read inside (no torn submits, no TOCTOU).
+- `claim_registry_item(...)` returns `ok | sold_out | unavailable` — item row locked, stock decided under lock (no oversell); `sync_claim_count` still maintains totals. Runs `security definer` (0021): the lock read is invisible to anon under RLS, so authorization comes from the in-body checks (wedding match, active, stock), mirroring the public-insert policy.
+- `checkin_guest(...)` — tenant guards + upsert in one call (opposing check-in/undo stays last-writer-wins).
+
 ## Security notes
 
 - Store only `token_hash` (sha256) for invitation tokens; raw token is shown once.

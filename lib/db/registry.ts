@@ -262,15 +262,36 @@ export async function claimItem(
     return { error: 'This gift is fully claimed.' };
   }
 
-  const { error } = await supabase.from('registry_claims').insert({
-    item_id: itemId,
-    wedding_id: weddingId,
-    guest_name: input.guestName.trim().slice(0, 120),
-    guest_email: input.guestEmail.trim() || null,
-    amount_cents: input.amountCents.trim() ? Number(input.amountCents) : null,
-    message: input.message.trim().slice(0, 1000),
-    status: 'reserved',
+  // Hard inventory gate (migration 0020): the item row is locked, stock is
+  // decided under the lock, and the claim inserts in the same transaction —
+  // concurrent guests can no longer all see "1 left" and all reserve.
+  const { data: outcome, error: rpcError } = await supabase.rpc('claim_registry_item', {
+    p_item_id: itemId,
+    p_wedding_id: weddingId,
+    p_guest_name: input.guestName.trim().slice(0, 120),
+    p_guest_email: input.guestEmail.trim().slice(0, 320),
+    p_amount_cents: input.amountCents.trim() ? Number(input.amountCents) : null,
+    p_message: input.message.trim().slice(0, 1000),
   });
-  if (error) return { error: 'Could not record your reservation. Please try again.' };
+  if (rpcError) {
+    const { isMissingFunction } = await import('@/lib/db/schema-guard');
+    if (!isMissingFunction(rpcError)) {
+      return { error: 'Could not record your reservation. Please try again.' };
+    }
+    // Pre-migration database: legacy direct insert (oversell possible).
+    const { error } = await supabase.from('registry_claims').insert({
+      item_id: itemId,
+      wedding_id: weddingId,
+      guest_name: input.guestName.trim().slice(0, 120),
+      guest_email: input.guestEmail.trim() || null,
+      amount_cents: input.amountCents.trim() ? Number(input.amountCents) : null,
+      message: input.message.trim().slice(0, 1000),
+      status: 'reserved',
+    });
+    if (error) return { error: 'Could not record your reservation. Please try again.' };
+    return { ok: true };
+  }
+  if (outcome === 'sold_out') return { error: 'This gift is fully claimed.' };
+  if (outcome !== 'ok') return { error: 'This gift is no longer available.' };
   return { ok: true };
 }

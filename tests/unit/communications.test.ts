@@ -115,6 +115,7 @@ describe('delivery', () => {
   it('processDueMessages with no rows returns zeros', async () => {
     const calls: string[] = [];
     const fake = {
+      rpc: () => Promise.resolve({ data: [], error: null }),
       from: () => ({
         select: () => ({ eq: () => ({ lte: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) }),
         update: () => ({ eq: () => { calls.push('update'); return Promise.resolve({}); } }),
@@ -127,5 +128,58 @@ describe('delivery', () => {
     );
     expect(res).toEqual({ sent: 0, failed: 0 });
     expect(calls).toEqual([]);
+  });
+
+  it('claims due rows, delivers, and finalizes each claim', async () => {
+    const updates: string[] = [];
+    const fake = {
+      rpc: () =>
+        Promise.resolve({
+          data: [
+            {
+              id: 'm1',
+              channel: 'email',
+              to_address: 'a@example.com',
+              subject: 'Hi',
+              body_snapshot: 'Hello',
+            },
+          ],
+          error: null,
+        }),
+      from: () => ({
+        update: (patch: Record<string, unknown>) => ({
+          eq: () => {
+            updates.push(String(patch.status));
+            return Promise.resolve({});
+          },
+        }),
+      }),
+    };
+    const res = await processDueMessages(
+      fake as never,
+      new NoOpEmailProvider(),
+      new NoOpSmsProvider(),
+    );
+    expect(res).toEqual({ sent: 1, failed: 0 });
+    expect(updates).toEqual(['sent']);
+  });
+
+  it('falls back to the legacy scan when the claim function is missing', async () => {
+    const fake = {
+      rpc: () =>
+        Promise.resolve({
+          data: null,
+          error: { message: 'Could not find the function public.claim_due_messages in the schema cache' },
+        }),
+      from: () => ({
+        select: () => ({ eq: () => ({ lte: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) }),
+      }),
+    };
+    const res = await processDueMessages(
+      fake as never,
+      new NoOpEmailProvider(),
+      new NoOpSmsProvider(),
+    );
+    expect(res).toEqual({ sent: 0, failed: 0 });
   });
 });

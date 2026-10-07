@@ -14,9 +14,9 @@ and tested.
 
 # Overall Status
 
-**Current phase:** Phase 15 --- Deferred Product Gaps (`COMPLETE` — verified live 2026-10-07: 124/124 tests on migrations 0001–0018; typecheck + lint + build green)
+**Current phase:** Phase 16 --- Reliability Hardening (`COMPLETE` — verified live 2026-10-07: 134/134 tests on migrations 0001–0021; typecheck + lint + build green)
 
-**Overall completion:** 100% (Phases 0–15)
+**Overall completion:** 100% (Phases 0–16)
 
 **Production ready:** No
 
@@ -366,6 +366,22 @@ Status: `COMPLETE` (verified live 2026-10-07: 112/112 tests + 5/5 hardening jour
 
 ------------------------------------------------------------------------
 
+# Phase 16 --- Reliability Hardening
+
+Status: `COMPLETE` (verified live 2026-10-07: 134/134 tests on migrations 0001–0021 incl. 5-way anon oversell race, claim overlap/stale-recovery, RSVP deadline re-check, tenant-guarded check-in; typecheck + lint + build green)
+
+-   [x] Atomic dispatch claims (`sending` state + `FOR UPDATE SKIP LOCKED`)
+-   [x] Secure cron endpoint (`Bearer CRON_SECRET`, Vercel Cron every 5 min)
+-   [x] Atomic multi-event RSVP (fresh deadline check in-transaction)
+-   [x] Hard registry inventory gate (row lock, no oversell)
+-   [x] Atomic tenant-guarded check-in
+-   [x] Legacy fallbacks when 0019/0020 pending (old behavior preserved)
+-   [x] PDF preflight + fallback URL + studio print-via-preview + error taxonomy
+-   [x] Unit tests (cron auth, claim/deliver/fallback, Chromium matcher)
+-   [x] Live verification (migrations 0019–0021 applied 2026-10-07)
+
+------------------------------------------------------------------------
+
 # Phase 15 --- Deferred Product Gaps
 
 Status: `COMPLETE` (verified live 2026-10-07: 124/124 tests on migrations 0001–0018 incl. vote uniqueness/unpublished-denial, payment trigger rollup reversal, invite claim flow; typecheck + lint + build green)
@@ -414,7 +430,7 @@ Status: `COMPLETE` (2026-10-07: mega-journey 15/15 live, integrity clean, 112/11
 
 # Current Known Issues
 
-Last reviewed: Phase 15 implementation (2026-10-07). No critical or
+Last reviewed: Phase 16 implementation (2026-10-07). No critical or
 high-severity open problems. The following are accepted limitations and
 follow-ups, worst first.
 
@@ -424,15 +440,18 @@ follow-ups, worst first.
   communications send through NoOp providers without keys. Live Stripe /
   Resend / Twilio / PostHog / Sentry integrations are Phase-13-tracked ops
   work, not code gaps (abstractions + factories are in place).
-- Scheduled message dispatch has no cron attached — use pg_cron, an
-  external scheduler hitting a `processDueNow` endpoint, or the manual
-  button (see `docs/deployment.md`).
-- PDF rendering needs a Chromium binary on the app host (Vercel serverless
-  excluded — use HTML preview + browser print there).
-- Concurrency races are possible on simultaneous RSVP/check-in writes;
-  vendor payment totals are race-safe via the `sync_vendor_paid` trigger
-  (Phase 15). Registry oversell under concurrency remains possible until
-  hard inventory gating lands with payments.
+- Scheduled dispatch needs a scheduler + `CRON_SECRET`: Vercel Cron ships
+  in `vercel.json` (5 min); without it use pg_cron/external cron or the
+  manual button (see `docs/deployment.md`). Overlapping runners are
+  claim-safe; crashed workers' rows recover after 10 minutes.
+- PDF rendering needs a Chromium binary on the app host. Hosts without it
+  now get a fast 503 with an HTML fallback URL, and the studio offers
+  print-via-preview (Vercel serverless included). One-click PDFs on
+  serverless still need an external render service (`PDF_RENDER_URL`,
+  unwired).
+- Simultaneous opposing ops (check-in vs undo) remain last-writer-wins —
+  staff coordinate the door and the offline outbox dedupes per device.
+  RSVP multi-event writes are now atomic and registry oversell is gated.
 - Team invites record + auto-link only: no invite email is sent yet
   (comms sends to guests, not team onboarding). The pending-invites list
   shows who has access coming.
@@ -512,6 +531,7 @@ Record important technical/product decisions here.
   2026-10-07    Hardening: plans enforced at creation; append-only audit; static RLS audit in suite    Monitoring/analytics abstracted (console now, vendors later); indexes audited    13
   2026-10-07    Audit: locale chain demoted issuance hint; form inputs labelled; integrity clean    Mega-journey 15/15; README + deployment docs rewritten    14
   2026-10-07    Phase 15: game questions/votes (0016), vendor payments + trigger rollup (0017), team invites + auto-link (0018), budget template, section/dash key pass (66 keys × 32 locales), live preview engagement    15
+  2026-10-07    Phase 16: dispatch claims + cron endpoint (0019), atomic RSVP/registry/check-in RPCs (0020), PDF preflight + fallback    16
 
 ------------------------------------------------------------------------
 
@@ -542,6 +562,8 @@ Record meaningful implementation changes.
   2026-10-07    Phase 15 code complete: 109 unit tests pass, typecheck + lint + build green; migrations 0016–0018 written, awaiting apply for live verification   15
   2026-10-07    Phase 15 hardening: schema-guard degrades new-table reads to empty + names pending migration on writes (PGRST205); vendors/engage/hub pages no longer 500 pre-migration   15
   2026-10-07    Phase 15 verified live: migrations 0016–0018 applied, 124/124 tests pass (fixed 2 test-only issues: public-read assertion, wedding-scoped reads)   15
+  2026-10-07    Phase 16 code complete: unit tests pass, typecheck + lint + build green; migrations 0019–0021 written, awaiting apply for live verification   16
+  2026-10-07    Phase 16 verified live: migrations 0019–0021 applied, 134/134 tests pass (incl. anon oversell race after 0021 definer fix)   16
 
 ------------------------------------------------------------------------
 

@@ -9,7 +9,7 @@ import {
   type StationeryData,
 } from '@/lib/pdf/documents';
 import { THEMES } from '@/lib/themes/tokens';
-import { chromiumAvailable } from '@/lib/pdf/render';
+import { chromiumAvailable, isChromiumMissing } from '@/lib/pdf/render';
 
 function sampleData(): StationeryData {
   return {
@@ -113,6 +113,20 @@ describe('theme coverage', () => {
 });
 
 describe('chromium pipeline', () => {
+  it('recognizes every missing-binary failure shape', () => {
+    for (const message of [
+      'Could not find Chrome (ver. 120). Learn more.',
+      'Could not find expected browser (chrome) locally',
+      'Failed to launch the browser process!',
+      "spawn /root/.cache ENOENT chrome-linux/chrome",
+      'error while loading shared libraries: libnss3.so: cannot open shared object file',
+    ]) {
+      expect(isChromiumMissing(message)).toBe(true);
+    }
+    expect(isChromiumMissing('Stationery render failed.')).toBe(false);
+    expect(isChromiumMissing('You do not have permission for this wedding.')).toBe(false);
+  });
+
   it('renders a real PDF when a browser is available', async () => {
     if (!(await chromiumAvailable())) {
       console.warn('chromium unavailable — PDF render test skipped');

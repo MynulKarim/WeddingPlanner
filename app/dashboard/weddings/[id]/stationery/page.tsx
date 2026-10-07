@@ -4,6 +4,7 @@ import { getWedding } from '@/lib/db/weddings';
 import { fetchGuestHub } from '@/lib/db/guests';
 import { listEvents } from '@/lib/db/events';
 import { StationeryStudio } from './stationery-studio';
+import { chromiumAvailable } from '@/lib/pdf/render';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -13,7 +14,12 @@ export default async function StationeryPage({ params }: Props) {
   const { id } = await params;
   const wedding = await getWedding(id).catch(() => null);
   if (!wedding) notFound();
-  const [hub, events] = await Promise.all([fetchGuestHub(id), listEvents(id)]);
+  const [hub, events, pdfReady] = await Promise.all([
+    fetchGuestHub(id),
+    listEvents(id),
+    // Serverless hosts have no Chromium: the studio offers print-via-preview.
+    chromiumAvailable().catch(() => false),
+  ]);
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-16">
@@ -30,6 +36,7 @@ export default async function StationeryPage({ params }: Props) {
           weddingId={id}
           guests={hub.map((g) => ({ id: g.id, name: g.display_name }))}
           events={events.map((e) => ({ id: e.id, name: e.name }))}
+          pdfReady={pdfReady}
         />
       </div>
     </main>

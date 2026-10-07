@@ -31,6 +31,7 @@ Optional (features degrade gracefully to NoOp when absent):
 | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Future billing |
 | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` | Analytics |
 | `SENTRY_DSN` | Error monitoring (documented wiring) |
+| `CRON_SECRET` | Bearer secret for `/api/cron/dispatch` (generate: `openssl rand -hex 32`) |
 
 ## Vercel deployment
 
@@ -46,7 +47,7 @@ Optional (features degrade gracefully to NoOp when absent):
 
 1. Create the project, note URL + anon + service-role keys.
 2. SQL Editor → run `supabase/migrations/*.sql` **in numeric order**
-   (0001 → 0015).
+   (0001 → 0020 as shipped; always run every file in order).
 3. Authentication → Sign In / Up: enable Email, allow new signups, confirm
    email ON (recommended).
 4. Storage: the `wedding-media` bucket is created by migration 0006
@@ -54,17 +55,37 @@ Optional (features degrade gracefully to NoOp when absent):
 
 ## Scheduled dispatch (communications)
 
-`processDueMessages` has no cron attached by default. Options:
+Due scheduled messages are delivered by `POST /api/cron/dispatch` with
+`Authorization: Bearer <CRON_SECRET>`. The endpoint runs
+`processDueMessages` globally (all weddings, service role) and returns
+`{ ok, sent, failed }`. Overlapping runs are safe: rows are atomically
+claimed (`scheduled→sending`, `FOR UPDATE SKIP LOCKED`, migration 0019)
+before delivery, and crashed workers' rows become reclaimable after
+10 minutes. Without `CRON_SECRET` the endpoint answers 503 (never open).
 
-- Supabase **pg_cron** calling a secured Edge Function, or
-- Any external cron hitting an authenticated endpoint you add that calls
-  `processDueNow(weddingId)` per wedding, or
-- The manual **“Deliver due now”** button on the Messages page.
+Recommended wiring (ships in `vercel.json`: every 5 minutes):
+
+1. Set `CRON_SECRET` in the host env store (`openssl rand -hex 32`).
+2. Deploy — Vercel Cron calls the endpoint on schedule.
+3. Verify: Messages → history flips `scheduled` → `sent` at due time.
+
+Alternatives: Supabase **pg_cron** calling the endpoint, any external
+cron hitting it with the Bearer secret, or the manual **“Deliver due
+now”** button on the Messages page (per wedding, planner+).
+
+## PDF on serverless hosts
+
+The stationery route preflights Chromium: when the binary is missing it
+answers 503 with a `fallbackUrl` (`?format=html`), and the studio page
+swaps “Download PDF” for “Print via preview”. No action needed — but for
+one-click PDFs on serverless, add an external render service later
+(`PDF_RENDER_URL`, unwired; see `lib/pdf/render.ts`).
 
 ## Pre-launch checklist
 
 - [ ] `npm run typecheck && npm run lint && npm test && npm run build` green.
-- [ ] Migrations 0001–0015 applied (verify tables + `wedding-media` bucket).
+- [ ] All migrations applied in order (verify tables + `wedding-media` bucket).
+- [ ] `CRON_SECRET` set if scheduled sends are wanted.
 - [ ] Auth URLs configured (Site URL + callback redirect).
 - [ ] `npm audit` reviewed; backups/PITR enabled (see
       `docs/backup-disaster-recovery.md`).

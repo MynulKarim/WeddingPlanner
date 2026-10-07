@@ -23,3 +23,14 @@ export function isSchemaCacheMiss(error: unknown): boolean {
 export function pendingMigrationMessage(file: string): string {
   return `This needs database update ${file} — apply it in Supabase, then retry.`;
 }
+
+/** True when PostgREST does not know an RPC yet (migration pending). */
+export function isMissingFunction(error: unknown): boolean {
+  const e = error as { message?: string } | null;
+  return (
+    !!e &&
+    typeof e === 'object' &&
+    typeof e.message === 'string' &&
+    /could not find the function/i.test(e.message)
+  );
+}
