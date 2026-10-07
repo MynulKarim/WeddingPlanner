@@ -63,7 +63,8 @@ claimed (`scheduled→sending`, `FOR UPDATE SKIP LOCKED`, migration 0019)
 before delivery, and crashed workers' rows become reclaimable after
 10 minutes. Without `CRON_SECRET` the endpoint answers 503 (never open).
 
-Recommended wiring (ships in `vercel.json`: every 5 minutes):
+Recommended wiring (ships in `vercel.json`: daily 09:00 UTC — the Hobby
+maximum; restore `*/5 * * * *` on Pro for 5-minute dispatch):
 
 1. Set `CRON_SECRET` in the host env store (`openssl rand -hex 32`).
 2. Deploy — Vercel Cron calls the endpoint on schedule.
