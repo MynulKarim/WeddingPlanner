@@ -28,6 +28,13 @@ Pages/sections, media (private|guest-only|approved-public|public), monograms, ve
 registry items, seating tables/assignments, vendors/budget/tasks, messages, photos/guestbook/songs/games,
 checkins, thank-you notes. Each carries `wedding_id` + least-privilege RLS.
 
+## Phase 15 additions (migrations 0016–0018)
+
+- `game_questions(id, wedding_id, game_id FK CASCADE, question, options JSONB, correct_option NULL, position)` — quiz/vote questions; member-all + public read on published weddings with active games.
+- `game_votes(id, wedding_id, question_id FK CASCADE, guest_name, option_index, UNIQUE(question_id, guest_name))` — one ballot per name per question; public insert on published weddings + active games, tally-visible reads.
+- `vendor_payments(id, wedding_id, vendor_id FK CASCADE, amount_cents > 0, paid_on, note)` — installment line items; `sync_vendor_paid()` trigger rolls inserts/deletes into `vendors.paid_cents` atomically. Member-only.
+- `team_invites(id, wedding_id, email, role CHECK admin|planner|staff, invited_by, UNIQUE(wedding_id, email))` — pending team access; member read, admin write; consumed by auto-link on sign-in/registration. Never owner.
+
 ## Security notes
 
 - Store only `token_hash` (sha256) for invitation tokens; raw token is shown once.

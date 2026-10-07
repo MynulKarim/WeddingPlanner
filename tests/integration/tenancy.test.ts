@@ -83,5 +83,5 @@ describe.skipIf(!hasEnv)('cross-tenant isolation', () => {
       timezone: 'UTC',
     });
     expect(insertErr).not.toBeNull();
-  });
+  }, 90000);
 });

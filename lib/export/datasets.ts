@@ -7,7 +7,7 @@ import type { HubGuest } from '@/lib/guests/hub';
 import type { RsvpBoard } from '@/lib/db/rsvp';
 import type { EventRow } from '@/lib/db/events';
 import type { SeatingPlan } from '@/lib/db/seating';
-import type { BudgetRow, TaskRow, VendorRow } from '@/lib/db/planning';
+import type { BudgetRow, TaskRow, VendorPaymentRow, VendorRow } from '@/lib/db/planning';
 
 export const EXPORT_DATASETS = [
   'guests',
@@ -18,6 +18,7 @@ export const EXPORT_DATASETS = [
   'events',
   'budget',
   'vendors',
+  'vendor-payments',
   'tasks',
 ] as const;
 
@@ -34,6 +35,7 @@ export interface ExportBundle {
   plan: SeatingPlan;
   budget: BudgetRow[];
   vendors: VendorRow[];
+  payments: VendorPaymentRow[];
   tasks: TaskRow[];
   guestNames: Map<string, string>;
   householdOf: Map<string, string | null>;
@@ -62,6 +64,8 @@ export function datasetHeaders(dataset: ExportDataset): string[] {
       return ['Category', 'Title', 'Vendor', 'Budgeted', 'Actual', 'Paid', 'Remaining', 'Due date', 'Notes'];
     case 'vendors':
       return ['Name', 'Category', 'Contact', 'Email', 'Phone', 'Website', 'Cost', 'Paid', 'Status', 'Due date', 'Notes'];
+    case 'vendor-payments':
+      return ['Vendor', 'Amount', 'Paid on', 'Note'];
     case 'tasks':
       return ['Title', 'Category', 'Status', 'Due date', 'Assignee', 'Notes'];
   }
@@ -150,6 +154,15 @@ export function datasetRows(dataset: ExportDataset, b: ExportBundle): string[][]
         v.due_date ?? '',
         v.notes,
       ]);
+    case 'vendor-payments': {
+      const vendorName = (id: string) => b.vendors.find((v) => v.id === id)?.name ?? id;
+      return b.payments.map((p) => [
+        vendorName(p.vendor_id),
+        money(p.amount_cents),
+        p.paid_on ?? '',
+        p.note,
+      ]);
+    }
     case 'tasks':
       return b.tasks.map((t) => [
         t.title,

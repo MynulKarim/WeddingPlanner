@@ -184,6 +184,10 @@ export async function addMemberByEmail(
 ): Promise<MemberActionState> {
   const weddingId = String(formData.get('weddingId') ?? '');
   await requireRole(weddingId, 'admin');
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const role = String(formData.get('role') ?? 'planner') as WeddingRole;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -192,12 +196,18 @@ export async function addMemberByEmail(
   if (!ASSIGNABLE_ROLES.includes(role)) {
     return { error: 'Role must be admin, planner, or staff.' };
   }
-  // Membership is keyed by user id; resolve via profiles is not possible from
-  // email alone with the anon key. Record the invite intent for now — full
-  // invite-by-email resolution ships with communications (Phase 7).
+  const { error } = await supabase.from('team_invites').upsert(
+    { wedding_id: weddingId, email, role, invited_by: user?.id ?? null },
+    { onConflict: 'wedding_id,email' },
+  );
+  if (error) {
+    const { isSchemaCacheMiss, pendingMigrationMessage } = await import('@/lib/db/schema-guard');
+    if (isSchemaCacheMiss(error)) return { error: pendingMigrationMessage('0018_team_invites.sql') };
+    return { error: error.message };
+  }
   return {
     message:
       `Invite recorded for ${email} as ${role}. ` +
-      'They will gain access once they register with this email (Phase 7 finalizes auto-link).',
+      'They gain access automatically when they sign in with this email.',
   };
 }

@@ -113,5 +113,5 @@ describe.skipIf(!hasEnv)('guest hub isolation', () => {
       timezone: 'UTC',
     });
     expect(evilEvent).not.toBeNull();
-  });
+  }, 90000);
 });

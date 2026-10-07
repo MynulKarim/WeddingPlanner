@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { I18N_KEYS } from '@/lib/i18n/keys';
+import { sectionLabel } from '@/lib/invitation/sections';
 import {
   dictionaryCoverage,
   formatDate,
@@ -29,6 +30,28 @@ describe('translation completeness', () => {
   it('registers exactly the framework locales', () => {
     const framework = new Set(SUPPORTED_LANGUAGES.map((l) => l.code));
     expect(new Set(supportedDictLocales())).toEqual(framework);
+  });
+
+  it('ships the Phase 15 section, game, and hub keys', () => {
+    for (const key of [
+      'site.section.events',
+      'site.section.games',
+      'game.voteButton',
+      'dash.nav.budget',
+      'dash.desc.budget',
+      'dash.pendingInvites',
+    ] as const) {
+      expect(I18N_KEYS).toContain(key);
+    }
+  });
+});
+
+describe('section labels', () => {
+  it('localizes kickers, defaults to English, and echoes unknown ids', () => {
+    expect(sectionLabel('games')).toBe('Games');
+    expect(sectionLabel('games', 'fr')).toBe('Jeux');
+    expect(sectionLabel('photowall', 'ar')).not.toBe('Photo wall');
+    expect(sectionLabel('mystery-section', 'fr')).toBe('mystery-section');
   });
 });
 

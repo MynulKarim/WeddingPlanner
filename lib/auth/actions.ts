@@ -35,7 +35,7 @@ export async function signUpWithPassword(
   if (password.length < 8) return { error: 'Password must be at least 8 characters.' };
 
   const supabase = await createServerSupabaseClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -44,6 +44,13 @@ export async function signUpWithPassword(
     },
   });
   if (error) return { error: error.message };
+  // Team auto-link (Phase 15): consume any pending team invites for this
+  // email now — access lands the moment they verify and sign in (the
+  // callback and sign-in paths claim again, idempotently).
+  if (data.user) {
+    const { claimTeamInvites } = await import('@/lib/db/team-invites');
+    await claimTeamInvites(data.user.id, email);
+  }
   return { message: 'Check your email to verify your account, then sign in.' };
 }
 
@@ -58,8 +65,13 @@ export async function signInWithPassword(
   if (!password) return { error: 'Enter your password.' };
 
   const supabase = await createServerSupabaseClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: error.message };
+  // Team auto-link (Phase 15): a proven email owns its pending invites.
+  if (data.user) {
+    const { claimTeamInvites } = await import('@/lib/db/team-invites');
+    await claimTeamInvites(data.user.id, data.user.email ?? email);
+  }
   redirect('/dashboard');
 }
 

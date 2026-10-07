@@ -100,7 +100,7 @@ function PreviewSection({ id, data }: { id: string; data: PreviewData }) {
     case 'couple':
       return (
         <div className="px-6 py-8 text-center">
-          <SectionKicker label={sectionLabel(id)} />
+          <SectionKicker label={sectionLabel(id, locale)} />
           <p className="mt-2 text-2xl" style={display}>
             {data.weddingTitle}
           </p>
@@ -110,7 +110,7 @@ function PreviewSection({ id, data }: { id: string; data: PreviewData }) {
       return (
         <div className="px-6 py-8">
           <div className="text-center">
-            <SectionKicker label={sectionLabel(id)} />
+            <SectionKicker label={sectionLabel(id, locale)} />
           </div>
           {data.events.length === 0 ? (
             <p className="mt-3 text-center text-sm" style={muted}>
@@ -145,7 +145,7 @@ function PreviewSection({ id, data }: { id: string; data: PreviewData }) {
     case 'venue':
       return (
         <div className="px-6 py-8 text-center">
-          <SectionKicker label={sectionLabel(id)} />
+          <SectionKicker label={sectionLabel(id, locale)} />
           <p className="mt-2 text-sm" style={muted}>
             {t(locale, 'site.venueEmpty')}
           </p>
@@ -154,7 +154,7 @@ function PreviewSection({ id, data }: { id: string; data: PreviewData }) {
     case 'gallery':
       return (
         <div className="px-6 py-8 text-center">
-          <SectionKicker label={sectionLabel(id)} />
+          <SectionKicker label={sectionLabel(id, locale)} />
           {data.coverUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -199,7 +199,7 @@ function PreviewSection({ id, data }: { id: string; data: PreviewData }) {
       return (
         <div className="px-6 py-6 text-center">
           <p className="text-sm" style={muted}>
-            Custom section: {sectionLabel(id)}
+            Custom section: {sectionLabel(id, locale)}
           </p>
         </div>
       );

@@ -4,6 +4,8 @@
  * visibility. Stored as JSONB; unknown/future ids are preserved on load and
  * merged with defaults so new sections appear without wiping customization.
  */
+import { I18N_KEYS, type I18nKey } from '@/lib/i18n/keys';
+import { t } from '@/lib/i18n/dict';
 
 export const SECTION_IDS = [
   'hero',
@@ -70,7 +72,16 @@ export const SECTION_LABELS: Record<string, string> = {
   footer: 'Footer',
 };
 
-export function sectionLabel(id: string): string {
+/**
+ * Localized section title (Phase 15 section-label key pass). Guest-facing
+ * kickers pass the resolved locale; dashboard callers keep the English
+ * default. Unknown ids fall back to the English map, then the raw id.
+ */
+export function sectionLabel(id: string, locale = 'en'): string {
+  const key = `site.section.${id}`;
+  if ((I18N_KEYS as readonly string[]).includes(key)) {
+    return t(locale, key as I18nKey);
+  }
   return SECTION_LABELS[id] ?? id;
 }
 

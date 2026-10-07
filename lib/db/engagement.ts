@@ -16,6 +16,15 @@ import {
   type GameKind,
 } from '@/lib/engagement/validation';
 import { GAME_KINDS } from '@/lib/engagement/validation';
+import {
+  correctIndexOrNull,
+  parseOptions,
+  tallyVotes,
+  validateQuestion,
+  validateVote,
+  type PublicGame,
+} from '@/lib/engagement/quiz';
+import { isSchemaCacheMiss, pendingMigrationMessage } from '@/lib/db/schema-guard';
 
 // ---------------------------------------------------------------------------
 // Reads (member)
@@ -148,6 +157,148 @@ export async function deleteCapsule(weddingId: string, id: string): Promise<void
 }
 export async function deleteGame(weddingId: string, id: string): Promise<void> {
   await removeRow(weddingId, 'games', id);
+}
+
+/** Flip a game's visibility on the public website (planner+). */
+export async function setGameActive(
+  weddingId: string,
+  id: string,
+  active: boolean,
+): Promise<void> {
+  await requireRole(weddingId, 'planner');
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase
+    .from('games')
+    .update({ is_active: active })
+    .eq('id', id)
+    .eq('wedding_id', weddingId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/dashboard/weddings/${weddingId}/engage`);
+}
+
+export interface QuestionState {
+  error?: string;
+}
+
+/** Add a quiz/vote question to a game (planner+). */
+export async function createQuestion(
+  weddingId: string,
+  gameId: string,
+  _prev: QuestionState,
+  formData: FormData,
+): Promise<QuestionState> {
+  await requireRole(weddingId, 'planner');
+  const question = String(formData.get('question') ?? '');
+  const options = parseOptions(String(formData.get('options') ?? ''));
+  const correctRaw = String(formData.get('correctOption') ?? '');
+  const errors = validateQuestion({ question, options, correctOption: correctRaw });
+  if (errors.length > 0) return { error: errors[0] };
+  const supabase = await createServerSupabaseClient();
+  // Game must belong to this wedding (defense in depth; RLS enforces too).
+  const { data: game } = await supabase
+    .from('games')
+    .select('id')
+    .eq('id', gameId)
+    .eq('wedding_id', weddingId)
+    .maybeSingle();
+  if (!game) return { error: 'Game not found.' };
+  const { error } = await supabase.from('game_questions').insert({
+    wedding_id: weddingId,
+    game_id: gameId,
+    question: question.trim().slice(0, 300),
+    options,
+    correct_option: correctIndexOrNull(correctRaw),
+  });
+  if (error) {
+    if (isSchemaCacheMiss(error)) return { error: pendingMigrationMessage('0016_game_interactivity.sql') };
+    return { error: error.message };
+  }
+  revalidatePath(`/dashboard/weddings/${weddingId}/engage`);
+  return {};
+}
+
+export async function deleteQuestion(weddingId: string, questionId: string): Promise<void> {
+  await requireRole(weddingId, 'planner');
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase
+    .from('game_questions')
+    .delete()
+    .eq('id', questionId)
+    .eq('wedding_id', weddingId);
+  if (error) {
+    if (isSchemaCacheMiss(error)) throw new Error(pendingMigrationMessage('0016_game_interactivity.sql'));
+    throw new Error(error.message);
+  }
+  revalidatePath(`/dashboard/weddings/${weddingId}/engage`);
+}
+
+/**
+ * Games with questions + live tallies (staff+). Shared by the engage board
+ * and the dashboard website preview so both show exactly what guests see.
+ */
+export async function getGamesWithResults(weddingId: string): Promise<PublicGame[]> {
+  await requireRole(weddingId, 'staff');
+  const supabase = await createServerSupabaseClient();
+  const [{ data: games }, questionsRes, votesRes] = await Promise.all([
+    supabase
+      .from('games')
+      .select('id, kind, title, description, is_active')
+      .eq('wedding_id', weddingId)
+      .order('position')
+      .order('created_at'),
+    supabase
+      .from('game_questions')
+      .select('id, game_id, question, options, correct_option')
+      .eq('wedding_id', weddingId)
+      .order('position')
+      .order('created_at'),
+    supabase
+      .from('game_votes')
+      .select('question_id, option_index')
+      .eq('wedding_id', weddingId),
+  ]);
+  // Migration 0016 pending: games without questions, not a failure.
+  const questions = isSchemaCacheMiss(questionsRes.error) ? [] : (questionsRes.data ?? []);
+  const votes = isSchemaCacheMiss(votesRes.error) ? [] : (votesRes.data ?? []);
+  const byGame = new Map<string, PublicGame['questions']>();
+  for (const q of ((questions ?? []) as {
+    id: string;
+    game_id: string;
+    question: string;
+    options: unknown;
+    correct_option: number | null;
+  }[])) {
+    const options = Array.isArray(q.options) ? (q.options as string[]) : [];
+    const tally = tallyVotes(
+      options.length,
+      ((votes ?? []) as { question_id: string; option_index: number }[]).filter(
+        (v) => v.question_id === q.id,
+      ),
+    );
+    const list = byGame.get(q.game_id) ?? [];
+    list.push({
+      id: q.id,
+      question: q.question,
+      options,
+      correct_option: q.correct_option,
+      tally,
+    });
+    byGame.set(q.game_id, list);
+  }
+  return (((games ?? []) as {
+    id: string;
+    kind: string;
+    title: string;
+    description: string;
+    is_active: boolean;
+  }[])).map((g) => ({
+    id: g.id,
+    kind: g.kind,
+    title: g.title,
+    description: g.description,
+    is_active: g.is_active,
+    questions: byGame.get(g.id) ?? [],
+  }));
 }
 export async function deleteAlbum(weddingId: string, id: string): Promise<void> {
   await removeRow(weddingId, 'albums', id);
@@ -410,6 +561,51 @@ export async function uploadGuestPhoto(
   if (rowError) {
     await supabase.storage.from('wedding-media').remove([path]);
     return { error: 'Upload failed. Please try again.' };
+  }
+  return { ok: true };
+}
+
+/**
+ * Cast a quiz/vote ballot (session-less; RLS gates to published weddings
+ * with active games). One vote per name per question; re-votes get a
+ * friendly message instead of a database error.
+ */
+export async function submitGameVote(
+  weddingId: string,
+  questionId: string,
+  _prev: PublicState,
+  formData: FormData,
+): Promise<PublicState> {
+  const supabase = await publicClient();
+  const { data: question } = await supabase
+    .from('game_questions')
+    .select('id, options')
+    .eq('id', questionId)
+    .eq('wedding_id', weddingId)
+    .maybeSingle();
+  const options = (question as { options?: unknown } | null)?.options;
+  const optionCount = Array.isArray(options) ? options.length : 0;
+  // Unreadable question = unpublished wedding, inactive game, or wrong id.
+  // Same generic error for all three so nothing leaks.
+  if (!question || optionCount === 0) return { error: 'Voting is closed for this game.' };
+  const input = {
+    guestName: String(formData.get('guestName') ?? ''),
+    optionIndex: Number(String(formData.get('optionIndex') ?? '')),
+    optionCount,
+  };
+  const errors = validateVote(input);
+  if (errors.length > 0) return { error: errors[0] };
+  const { error } = await supabase.from('game_votes').insert({
+    wedding_id: weddingId,
+    question_id: questionId,
+    guest_name: input.guestName.trim().slice(0, 80),
+    option_index: input.optionIndex,
+  });
+  if (error) {
+    if ((error as { code?: string }).code === '23505') {
+      return { error: 'That name already voted on this question.' };
+    }
+    return { error: 'Could not count your vote. Please try again.' };
   }
   return { ok: true };
 }

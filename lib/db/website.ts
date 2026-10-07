@@ -18,6 +18,7 @@ import {
   sanitizeWebsiteContent,
   type WebsiteContent,
 } from '@/lib/website/content';
+import { tallyVotes, type PublicGame } from '@/lib/engagement/quiz';
 
 export interface WebsiteRow {
   wedding_id: string;
@@ -54,6 +55,83 @@ export async function getWebsite(weddingId: string): Promise<WebsiteRow | null> 
     noindex: row.noindex,
     sections: normalizeSections(row.sections, WEBSITE_SECTION_IDS),
     content: sanitizeWebsiteContent(row.content),
+  };
+}
+
+export interface WebsitePreviewData {
+  guestbook: { guest_name: string; message: string }[];
+  songs: { guest_name: string; title: string; artist: string; message: string }[];
+  games: PublicGame[];
+  capsule: { guest_name: string; message: string }[];
+  welcomeVideoUrl: string | null;
+}
+
+/**
+ * Live engagement for the dashboard preview (Phase 15). Same approved-only
+ * shape guests see on /w/[slug] — moderation queue stays in Engage — plus
+ * unpublished changes, so the preview is exactly the soon-to-be-live site.
+ */
+export async function getWebsitePreview(weddingId: string): Promise<WebsitePreviewData> {
+  await requireRole(weddingId, 'staff');
+  const { getGamesWithResults } = await import('@/lib/db/engagement');
+  const supabase = await createServerSupabaseClient();
+  const [{ data: guestbook }, { data: songs }, { data: capsule }, { data: site }, games] =
+    await Promise.all([
+      supabase
+        .from('guestbook_entries')
+        .select('guest_name, message')
+        .eq('wedding_id', weddingId)
+        .eq('is_approved', true)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      supabase
+        .from('song_requests')
+        .select('guest_name, title, artist, message')
+        .eq('wedding_id', weddingId)
+        .eq('is_approved', true)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      supabase
+        .from('time_capsules')
+        .select('guest_name, message, open_after')
+        .eq('wedding_id', weddingId)
+        .eq('is_approved', true)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('wedding_websites')
+        .select('content')
+        .eq('wedding_id', weddingId)
+        .maybeSingle(),
+      getGamesWithResults(weddingId),
+    ]);
+  const today = new Date().toISOString().slice(0, 10);
+  const opened = (((capsule ?? []) as {
+    guest_name: string;
+    message: string;
+    open_after: string | null;
+  }[]).filter((c) => !c.open_after || c.open_after <= today));
+  let welcomeVideoUrl: string | null = null;
+  const content = ((site as { content?: Record<string, unknown> } | null)?.content ?? {}) as Record<string, unknown>;
+  if (typeof content.welcomeVideo === 'string') {
+    const { data: video } = await supabase
+      .from('media')
+      .select('path')
+      .eq('id', content.welcomeVideo)
+      .eq('wedding_id', weddingId)
+      .maybeSingle();
+    const path = (video as { path?: string } | null)?.path;
+    if (path) {
+      const { data: signed } = await supabase.storage.from('wedding-media').createSignedUrl(path, 3600);
+      welcomeVideoUrl = signed?.signedUrl ?? null;
+    }
+  }
+  return {
+    guestbook: (guestbook ?? []) as WebsitePreviewData['guestbook'],
+    songs: (songs ?? []) as WebsitePreviewData['songs'],
+    games: games.filter((g) => g.is_active !== false),
+    capsule: opened.map((c) => ({ guest_name: c.guest_name, message: c.message })),
+    welcomeVideoUrl,
   };
 }
 
@@ -169,7 +247,7 @@ export interface PublishedWebsite {
   gallery: { id: string; url: string; label: string | null }[];
   guestbook: { guest_name: string; message: string }[];
   songs: { guest_name: string; title: string; artist: string; message: string }[];
-  games: { kind: string; title: string; description: string }[];
+  games: PublicGame[];
   capsule: { guest_name: string; message: string }[];
   welcomeVideoUrl: string | null;
 }
@@ -238,8 +316,9 @@ export async function getPublishedWebsite(slug: string): Promise<PublishedWebsit
   );
 
   // Engagement (Phase 10): approved content only — RLS already filters to
-  // publicly visible rows for anonymous readers.
-  const [{ data: guestbook }, { data: songs }, { data: games }, { data: capsule }] =
+  // publicly visible rows for anonymous readers. Phase 15 adds live quiz
+  // tallies so guests see results the moment they vote.
+  const [{ data: guestbook }, { data: songs }, { data: games }, { data: capsule }, { data: questions }, { data: votes }] =
     await Promise.all([
       supabase
         .from('guestbook_entries')
@@ -255,7 +334,7 @@ export async function getPublishedWebsite(slug: string): Promise<PublishedWebsit
         .limit(50),
       supabase
         .from('games')
-        .select('kind, title, description')
+        .select('id, kind, title, description')
         .eq('wedding_id', w.id)
         .eq('is_active', true)
         .order('created_at'),
@@ -265,7 +344,52 @@ export async function getPublishedWebsite(slug: string): Promise<PublishedWebsit
         .eq('wedding_id', w.id)
         .order('created_at', { ascending: false })
         .limit(100),
+      supabase
+        .from('game_questions')
+        .select('id, game_id, question, options, correct_option')
+        .eq('wedding_id', w.id)
+        .order('created_at'),
+      supabase
+        .from('game_votes')
+        .select('question_id, option_index')
+        .eq('wedding_id', w.id),
     ]);
+
+  const gameRows = ((games ?? []) as {
+    id: string;
+    kind: string;
+    title: string;
+    description: string;
+  }[]);
+  const questionRows = ((questions ?? []) as {
+    id: string;
+    game_id: string;
+    question: string;
+    options: unknown;
+    correct_option: number | null;
+  }[]);
+  const voteRows = ((votes ?? []) as { question_id: string; option_index: number }[]);
+  const gamesWithTallies: PublicGame[] = gameRows.map((g) => ({
+    id: g.id,
+    kind: g.kind,
+    title: g.title,
+    description: g.description,
+    questions: questionRows
+      .filter((q) => q.game_id === g.id)
+      .map((q) => {
+        const options = Array.isArray(q.options) ? (q.options as string[]) : [];
+        return {
+          id: q.id,
+          question: q.question,
+          options,
+          correct_option: q.correct_option,
+          tally: tallyVotes(
+            options.length,
+            voteRows.filter((v) => v.question_id === q.id),
+          ),
+        };
+      }),
+  }));
 
   const content = sanitizeWebsiteContent(s.content);
   let welcomeVideoUrl: string | null = null;
@@ -301,7 +425,7 @@ export async function getPublishedWebsite(slug: string): Promise<PublishedWebsit
     gallery,
     guestbook: (guestbook ?? []) as PublishedWebsite['guestbook'],
     songs: (songs ?? []) as PublishedWebsite['songs'],
-    games: (games ?? []) as PublishedWebsite['games'],
+    games: gamesWithTallies,
     capsule: (capsule ?? []) as { guest_name: string; message: string }[],
     welcomeVideoUrl,
   };

@@ -13,13 +13,16 @@ import {
   deleteGame,
   deleteGuestbook,
   deletePhoto,
+  deleteQuestion,
   deleteSong,
   getEngagementBoard,
+  getGamesWithResults,
+  setGameActive,
   setWelcomeVideo,
 } from '@/lib/db/engagement';
 import { getDesign } from '@/lib/db/design';
 import { Card, SectionHeading } from '@/components/ui/primitives';
-import { AlbumForm, GameForm, VowForm } from './engage-forms';
+import { AlbumForm, GameForm, QuestionForm, VowForm } from './engage-forms';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -51,7 +54,11 @@ export default async function EngagePage({ params }: Props) {
   if (!wedding) notFound();
   const role = await getMyRole(id);
   const canEdit = role !== null && hasRoleAtLeast(role, 'planner');
-  const [board, design] = await Promise.all([getEngagementBoard(id), getDesign(id)]);
+  const [board, design, quizGames] = await Promise.all([
+    getEngagementBoard(id),
+    getDesign(id),
+    getGamesWithResults(id),
+  ]);
   const videos = design.media.filter((m) => m.kind === 'video');
 
   return (
@@ -174,19 +181,53 @@ export default async function EngagePage({ params }: Props) {
         </Card>
 
         <Card>
-          <SectionHeading title={`Games (${board.games.length})`} desc="Shoe game, quiz, kids zone. Displayed on the website." />
-          {board.games.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1.5">
-              {board.games.map((g) => (
-                <li key={g.id} className="flex items-center justify-between gap-2 text-sm">
-                  <span>{g.title} <span className="text-xs text-zinc-500">· {g.kind}{g.is_active ? '' : ' · off'}</span></span>
-                  {canEdit && (
-                    <form action={deleteGame.bind(null, id, g.id)}>
-                      <button type="submit" className="text-xs font-medium text-red-700 hover:underline dark:text-red-400">
-                        Delete
-                      </button>
-                    </form>
+          <SectionHeading title={`Games (${quizGames.length})`} desc="Shoe game, quiz, kids zone. Questions take live votes on the website." />
+          {quizGames.length > 0 && (
+            <ul className="mt-3 flex flex-col gap-3">
+              {quizGames.map((g) => (
+                <li key={g.id} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span>{g.title} <span className="text-xs text-zinc-500">· {g.kind}{g.is_active ? '' : ' · off'}</span></span>
+                    {canEdit && (
+                      <span className="flex gap-2">
+                        <form action={setGameActive.bind(null, id, g.id, !g.is_active)}>
+                          <button type="submit" className="text-xs font-medium hover:underline">
+                            {g.is_active ? 'Hide' : 'Show'}
+                          </button>
+                        </form>
+                        <form action={deleteGame.bind(null, id, g.id)}>
+                          <button type="submit" className="text-xs font-medium text-red-700 hover:underline dark:text-red-400">
+                            Delete
+                          </button>
+                        </form>
+                      </span>
+                    )}
+                  </div>
+                  {g.questions.length > 0 && (
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {g.questions.map((q) => (
+                        <li key={q.id} className="rounded-lg bg-black/[0.03] p-2 text-sm dark:bg-white/[0.04]">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium">{q.question}</p>
+                              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                                {q.options.map((o, i) => `${o} (${q.tally.counts[i]})`).join(' · ')} — {q.tally.total} votes
+                                {q.correct_option !== null && q.options[q.correct_option] ? ` · ✓ ${q.options[q.correct_option]}` : ''}
+                              </p>
+                            </div>
+                            {canEdit && (
+                              <form action={deleteQuestion.bind(null, id, q.id)}>
+                                <button type="submit" className="shrink-0 text-xs font-medium text-red-700 hover:underline dark:text-red-400">
+                                  Delete
+                                </button>
+                              </form>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   )}
+                  {canEdit && <QuestionForm weddingId={id} gameId={g.id} />}
                 </li>
               ))}
             </ul>

@@ -2,11 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getWedding, getMyRole } from '@/lib/db/weddings';
 import { hasRoleAtLeast } from '@/lib/auth/roles';
-import { deleteVendor, listVendors } from '@/lib/db/planning';
+import { deleteVendor, deleteVendorPayment, listVendorPayments, listVendors } from '@/lib/db/planning';
 import { vendorPaymentStatus } from '@/lib/planning/calc';
 import { formatMoney } from '@/lib/registry/registry';
 import { Card, SectionHeading } from '@/components/ui/primitives';
 import { VendorForm } from './vendor-form';
+import { PaymentForm } from './payment-form';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -26,6 +27,13 @@ export default async function VendorsPage({ params }: Props) {
   const canEdit = role !== null && hasRoleAtLeast(role, 'planner');
 
   const vendors = await listVendors(id);
+  const payments = await listVendorPayments(id);
+  const paymentsByVendor = new Map<string, typeof payments>();
+  for (const p of payments) {
+    const list = paymentsByVendor.get(p.vendor_id) ?? [];
+    list.push(p);
+    paymentsByVendor.set(p.vendor_id, list);
+  }
   const totalCost = vendors.reduce((a, v) => a + v.cost_cents, 0);
   const totalPaid = vendors.reduce((a, v) => a + v.paid_cents, 0);
 
@@ -41,12 +49,20 @@ export default async function VendorsPage({ params }: Props) {
             {formatMoney(totalPaid, 'USD')} paid of {formatMoney(totalCost, 'USD')} committed
           </p>
         </div>
-        <Link
-          href={`/api/weddings/${id}/export/vendors?format=xlsx`}
-          className="rounded-full border border-black/10 px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
-        >
-          Export
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/api/weddings/${id}/export/vendors?format=xlsx`}
+            className="rounded-full border border-black/10 px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
+          >
+            Export
+          </Link>
+          <Link
+            href={`/api/weddings/${id}/export/vendor-payments?format=csv`}
+            className="rounded-full border border-black/10 px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
+          >
+            Export payments
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -66,6 +82,7 @@ export default async function VendorsPage({ params }: Props) {
             <ul className="mt-3 flex flex-col gap-3">
               {vendors.map((v) => {
                 const status = vendorPaymentStatus(v.cost_cents, v.paid_cents);
+                const vPayments = paymentsByVendor.get(v.id) ?? [];
                 return (
                   <li key={v.id} className="rounded-xl border border-black/10 p-4 dark:border-white/10">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -101,6 +118,27 @@ export default async function VendorsPage({ params }: Props) {
                         </form>
                       )}
                     </div>
+                    {vPayments.length > 0 && (
+                      <ul className="mt-2 flex flex-col gap-1 border-t border-black/10 pt-2 text-xs dark:border-white/10">
+                        {vPayments.map((p) => (
+                          <li key={p.id} className="flex items-center justify-between gap-2">
+                            <span>
+                              {formatMoney(p.amount_cents, 'USD')}
+                              {p.paid_on && <span className="text-zinc-500"> · {p.paid_on}</span>}
+                              {p.note && <span className="text-zinc-500"> · {p.note}</span>}
+                            </span>
+                            {canEdit && (
+                              <form action={deleteVendorPayment.bind(null, id, p.id)}>
+                                <button type="submit" className="font-medium text-red-700 hover:underline dark:text-red-400">
+                                  Delete
+                                </button>
+                              </form>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {canEdit && <PaymentForm weddingId={id} vendorId={v.id} />}
                   </li>
                 );
               })}

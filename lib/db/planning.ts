@@ -8,7 +8,9 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireRole } from '@/lib/db/weddings';
+import { isSchemaCacheMiss, pendingMigrationMessage } from '@/lib/db/schema-guard';
 import { starterTasks } from '@/lib/planning/checklist-template';
+import { starterBudget } from '@/lib/planning/budget-template';
 
 // ---------------------------------------------------------------------------
 // Checklist
@@ -222,6 +224,38 @@ export async function deleteBudgetItem(weddingId: string, itemId: string): Promi
   revalidatePath(`/dashboard/weddings/${weddingId}/budget`);
 }
 
+/** Seed the starter budget dated from the wedding day (never touches existing). */
+export async function generateStarterBudget(
+  weddingId: string,
+  _prev: GenerateState,
+  formData: FormData,
+): Promise<GenerateState> {
+  await requireRole(weddingId, 'planner');
+  const weddingDay = String(formData.get('weddingDay') ?? '').trim();
+  let items;
+  try {
+    items = starterBudget(weddingDay);
+  } catch {
+    return { error: 'Wedding day must be YYYY-MM-DD.' };
+  }
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.from('budget_items').insert(
+    items.map((t) => ({
+      wedding_id: weddingId,
+      category: t.category,
+      title: t.title,
+      budgeted_cents: 0,
+      actual_cents: 0,
+      paid_cents: 0,
+      due_date: t.due_date,
+      notes: t.notes,
+    })),
+  );
+  if (error) return { error: error.message };
+  revalidatePath(`/dashboard/weddings/${weddingId}/budget`);
+  return { created: items.length };
+}
+
 // ---------------------------------------------------------------------------
 // Vendors
 // ---------------------------------------------------------------------------
@@ -304,5 +338,93 @@ export async function deleteVendor(weddingId: string, vendorId: string): Promise
     .eq('id', vendorId)
     .eq('wedding_id', weddingId);
   if (error) throw new Error(error.message);
+  revalidatePath(`/dashboard/weddings/${weddingId}/vendors`);
+}
+
+// ---------------------------------------------------------------------------
+// Vendor payments (per-installment line items; trigger rolls into paid_cents)
+// ---------------------------------------------------------------------------
+
+export interface VendorPaymentRow {
+  id: string;
+  wedding_id: string;
+  vendor_id: string;
+  amount_cents: number;
+  paid_on: string | null;
+  note: string;
+  created_at: string;
+}
+
+export async function listVendorPayments(weddingId: string): Promise<VendorPaymentRow[]> {
+  await requireRole(weddingId, 'staff');
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from('vendor_payments')
+    .select('id, wedding_id, vendor_id, amount_cents, paid_on, note, created_at')
+    .eq('wedding_id', weddingId)
+    .order('paid_on', { ascending: true, nullsFirst: true })
+    .order('created_at');
+  // Migration 0017 pending: no payments yet, not a failure.
+  if (error) {
+    if (isSchemaCacheMiss(error)) return [];
+    throw new Error(error.message);
+  }
+  return (data ?? []) as VendorPaymentRow[];
+}
+
+export interface VendorPaymentFormState {
+  error?: string;
+}
+
+/**
+ * Record one installment against a vendor (planner+). The 0017 trigger adds
+ * the amount to vendors.paid_cents atomically; deleting the row reverses it.
+ */
+export async function createVendorPayment(
+  weddingId: string,
+  vendorId: string,
+  _prev: VendorPaymentFormState,
+  formData: FormData,
+): Promise<VendorPaymentFormState> {
+  await requireRole(weddingId, 'planner');
+  const amount = parseCents(String(formData.get('amount') ?? ''));
+  if (amount === null || amount <= 0) return { error: 'Amount must be a positive whole number (cents).' };
+  const paidOn = String(formData.get('paidOn') ?? '').trim() || null;
+  if (paidOn && !/^\d{4}-\d{2}-\d{2}$/.test(paidOn)) return { error: 'Date must be YYYY-MM-DD.' };
+  const supabase = await createServerSupabaseClient();
+  const { data: vendor } = await supabase
+    .from('vendors')
+    .select('id')
+    .eq('id', vendorId)
+    .eq('wedding_id', weddingId)
+    .maybeSingle();
+  if (!vendor) return { error: 'Vendor not found.' };
+  const { error } = await supabase.from('vendor_payments').insert({
+    wedding_id: weddingId,
+    vendor_id: vendorId,
+    amount_cents: amount,
+    paid_on: paidOn,
+    note: String(formData.get('note') ?? '').trim().slice(0, 500),
+  });
+  if (error) {
+    if (isSchemaCacheMiss(error)) return { error: pendingMigrationMessage('0017_vendor_payments.sql') };
+    return { error: error.message };
+  }
+  revalidatePath(`/dashboard/weddings/${weddingId}/vendors`);
+  return {};
+}
+
+export async function deleteVendorPayment(weddingId: string, paymentId: string): Promise<void> {
+  await requireRole(weddingId, 'planner');
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase
+    .from('vendor_payments')
+    .delete()
+    .eq('id', paymentId)
+    .eq('wedding_id', weddingId);
+  if (error) {
+    if (isSchemaCacheMiss(error)) throw new Error(pendingMigrationMessage('0017_vendor_payments.sql'));
+    throw new Error(error.message);
+  }
   revalidatePath(`/dashboard/weddings/${weddingId}/vendors`);
 }

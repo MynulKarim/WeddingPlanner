@@ -5,9 +5,11 @@ import {
   requestSong,
   sealCapsule,
   signGuestbook,
+  submitGameVote,
   uploadGuestPhoto,
   type PublicState,
 } from '@/lib/db/engagement';
+import { t } from '@/lib/i18n/dict';
 
 const inputClass =
   'w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--wp-accent)]';
@@ -84,6 +86,40 @@ export function CapsuleForm({ weddingId }: { weddingId: string }) {
       </label>
       {state.error && <p className="text-sm text-red-700">{state.error}</p>}
       <SubmitButton pending={pending} label="Seal into capsule" />
+    </form>
+  );
+}
+
+export function GameVoteForm({
+  weddingId,
+  questionId,
+  options,
+  locale,
+}: {
+  weddingId: string;
+  questionId: string;
+  options: string[];
+  locale: string;
+}) {
+  const [state, formAction, pending] = useActionState<PublicState, FormData>(
+    submitGameVote.bind(null, weddingId, questionId),
+    {},
+  );
+  if (state.ok)
+    return <p className="mt-3 text-center text-sm font-medium">{t(locale, 'game.votedThanks')}</p>;
+  return (
+    <form action={formAction} className="mx-auto mt-3 flex max-w-md flex-col gap-2">
+      <input name="guestName" required maxLength={80} placeholder="Your name" aria-label="Your name" className={inputClass} style={inputStyle} />
+      <div role="radiogroup" aria-label={t(locale, 'game.chooseOption')} className="flex flex-col gap-1.5">
+        {options.map((o, i) => (
+          <label key={i} className="flex cursor-pointer items-center gap-2 text-sm">
+            <input type="radio" name="optionIndex" value={i} required className="h-4 w-4 accent-current" />
+            <span>{o}</span>
+          </label>
+        ))}
+      </div>
+      {state.error && <p className="text-sm text-red-700">{state.error}</p>}
+      <SubmitButton pending={pending} label={t(locale, 'game.voteButton')} />
     </form>
   );
 }

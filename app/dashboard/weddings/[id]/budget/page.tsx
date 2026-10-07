@@ -7,6 +7,7 @@ import { budgetByCategory, budgetTotals } from '@/lib/planning/calc';
 import { formatMoney } from '@/lib/registry/registry';
 import { Card, SectionHeading } from '@/components/ui/primitives';
 import { BudgetForm } from './budget-form';
+import { BudgetSeedForm } from './budget-seed-form';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -63,6 +64,14 @@ export default async function BudgetPage({ params }: Props) {
             <SectionHeading title="Add expense" />
             <div className="mt-3">
               <BudgetForm weddingId={id} />
+            </div>
+          </Card>
+        )}
+        {canEdit && items.length === 0 && (
+          <Card>
+            <SectionHeading title="Start from a template" desc="Dated deposit + balance lines per cost area, with typical share hints. Amounts stay zero until you budget real numbers." />
+            <div className="mt-3">
+              <BudgetSeedForm weddingId={id} defaultDay={new Date().toISOString().slice(0, 10)} />
             </div>
           </Card>
         )}

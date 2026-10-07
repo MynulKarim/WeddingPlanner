@@ -7,6 +7,7 @@ import {
   vendorPaymentStatus,
 } from '@/lib/planning/calc';
 import { starterTasks, starterTaskCount } from '@/lib/planning/checklist-template';
+import { starterBudget, starterBudgetCount } from '@/lib/planning/budget-template';
 import {
   datasetHeaders,
   datasetRows,
@@ -97,6 +98,20 @@ describe('starter checklist', () => {
   });
 });
 
+describe('starter budget', () => {
+  it('seeds dated deposit/balance lines with share hints', () => {
+    const items = starterBudget('2027-06-12');
+    expect(items).toHaveLength(starterBudgetCount());
+    const deposit = items.find((i) => i.title === 'Venue deposit');
+    expect(deposit!.due_date < '2027-06-12').toBe(true);
+    expect(deposit?.notes).toContain('25–35%');
+    const balance = items.find((i) => i.title === 'Venue final balance');
+    expect(balance!.due_date > deposit!.due_date).toBe(true);
+    expect(items.every((i) => /^\d{4}-\d{2}-\d{2}$/.test(i.due_date))).toBe(true);
+    expect(() => starterBudget('tomorrow')).toThrow();
+  });
+});
+
 describe('export datasets', () => {
   const bundle = {
     guests: [],
@@ -104,7 +119,33 @@ describe('export datasets', () => {
     events: [],
     plan: { tables: [], assignments: {} },
     budget: [],
-    vendors: [],
+    vendors: [
+      {
+        id: 'v1',
+        wedding_id: 'w1',
+        name: 'Studio',
+        category: 'Photo',
+        contact_name: null,
+        email: null,
+        phone: null,
+        website: null,
+        cost_cents: 100000,
+        paid_cents: 30000,
+        due_date: null,
+        notes: '',
+      },
+    ],
+    payments: [
+      {
+        id: 'p1',
+        wedding_id: 'w1',
+        vendor_id: 'v1',
+        amount_cents: 30000,
+        paid_on: '2027-01-15',
+        note: 'Deposit',
+        created_at: '2027-01-15T00:00:00Z',
+      },
+    ],
     tasks: [],
     guestNames: new Map(),
     householdOf: new Map(),
@@ -114,8 +155,13 @@ describe('export datasets', () => {
   it('validates dataset names and builds CSV safely', () => {
     expect(isExportDataset('guests')).toBe(true);
     expect(isExportDataset('nope')).toBe(false);
+    expect(isExportDataset('vendor-payments')).toBe(true);
     expect(datasetHeaders('tasks')).toContain('Title');
     expect(datasetRows('tasks', bundle)).toEqual([]);
+    expect(datasetHeaders('vendor-payments')).toContain('Vendor');
+    expect(datasetRows('vendor-payments', bundle)).toEqual([
+      ['Studio', '300.00 USD', '2027-01-15', 'Deposit'],
+    ]);
     expect(toCsv(['A', 'B'], [['x,"y"', 'z']])).toBe('A,B\n"x,""y""",z');
   });
 });

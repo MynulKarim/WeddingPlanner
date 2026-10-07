@@ -6,7 +6,7 @@ import { addMemberByEmail, type MemberActionState } from '@/lib/db/weddings';
 const inputClass =
   'rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 px-4 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 outline-none transition-colors placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:border-[#8a6d3b]';
 
-export function AddMemberForm({ weddingId }: { weddingId: string }) {
+export function AddMemberForm({ weddingId, inviteLabel }: { weddingId: string; inviteLabel: string }) {
   const [state, formAction, pending] = useActionState<MemberActionState, FormData>(
     addMemberByEmail,
     {},
@@ -33,7 +33,7 @@ export function AddMemberForm({ weddingId }: { weddingId: string }) {
           disabled={pending}
           className="rounded-full bg-[#1a1a1a] dark:bg-zinc-100 px-5 py-2.5 text-sm font-medium text-white dark:text-zinc-900 transition-colors hover:bg-black dark:hover:bg-zinc-200 disabled:opacity-50"
         >
-          {pending ? 'Adding…' : 'Invite'}
+          {pending ? 'Adding…' : inviteLabel}
         </button>
       </div>
       {state.error && <p className="text-sm text-red-700 dark:text-red-400">{state.error}</p>}

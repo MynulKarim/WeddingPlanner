@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { getWedding, getMyRole } from '@/lib/db/weddings';
 import { hasRoleAtLeast } from '@/lib/auth/roles';
 import { getDesign } from '@/lib/db/design';
-import { getWebsite, saveWebsiteSections, setPublished } from '@/lib/db/website';
+import { getWebsite, getWebsitePreview, saveWebsiteSections, setPublished } from '@/lib/db/website';
 import { getRegistry } from '@/lib/db/registry';
 import { listEvents } from '@/lib/db/events';
 import { resolveTheme } from '@/lib/themes/tokens';
@@ -26,11 +26,12 @@ export default async function WebsitePage({ params }: Props) {
   const role = await getMyRole(id);
   const canEdit = role !== null && hasRoleAtLeast(role, 'planner');
 
-  const [site, design, events, registry] = await Promise.all([
+  const [site, design, events, registry, preview] = await Promise.all([
     getWebsite(id),
     getDesign(id),
     listEvents(id),
     getRegistry(id),
+    getWebsitePreview(id),
   ]);
   const sections = site?.sections ?? normalizeSections([], WEBSITE_SECTION_IDS);
   const theme = resolveTheme(design.themeId, design.overrides);
@@ -99,7 +100,7 @@ export default async function WebsitePage({ params }: Props) {
         )}
 
         <Card>
-          <SectionHeading title="Preview" desc="Exactly what guests see (unpublished changes included)." />
+          <SectionHeading title="Preview" desc="Exactly what guests see (unpublished changes included, with live engagement)." />
           <div className="mt-4">
             <PreviewShell>
               <WebsiteView
@@ -114,11 +115,11 @@ export default async function WebsitePage({ params }: Props) {
                   monogram: design.monogram,
                   gallery,
                   registry: registry.items,
-                  guestbook: [],
-                  songs: [],
-                  games: [],
-                  capsule: [],
-                  welcomeVideoUrl: null,
+                  guestbook: preview.guestbook,
+                  songs: preview.songs,
+                  games: preview.games,
+                  capsule: preview.capsule,
+                  welcomeVideoUrl: preview.welcomeVideoUrl,
                 }}
               />
             </PreviewShell>

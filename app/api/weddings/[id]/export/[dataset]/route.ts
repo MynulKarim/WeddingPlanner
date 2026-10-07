@@ -11,7 +11,7 @@ import { fetchGuestHub } from '@/lib/db/guests';
 import { getRsvpBoard } from '@/lib/db/rsvp';
 import { listEvents } from '@/lib/db/events';
 import { getSeatingPlan } from '@/lib/db/seating';
-import { listBudget, listTasks, listVendors } from '@/lib/db/planning';
+import { listBudget, listTasks, listVendorPayments, listVendors } from '@/lib/db/planning';
 import {
   datasetHeaders,
   datasetRows,
@@ -32,13 +32,14 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     const role = await getMyRole(weddingId);
     if (!role) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
 
-    const [guests, board, events, plan, budget, vendors, tasks] = await Promise.all([
+    const [guests, board, events, plan, budget, vendors, payments, tasks] = await Promise.all([
       fetchGuestHub(weddingId),
       getRsvpBoard(weddingId),
       listEvents(weddingId),
       getSeatingPlan(weddingId),
       listBudget(weddingId),
       listVendors(weddingId),
+      listVendorPayments(weddingId),
       listTasks(weddingId),
     ]);
     const tableOf = new Map<string, string>();
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
       plan,
       budget,
       vendors,
+      payments,
       tasks,
       guestNames: new Map(guests.map((g) => [g.id, g.display_name])),
       householdOf: new Map(guests.map((g) => [g.id, g.household_label])),

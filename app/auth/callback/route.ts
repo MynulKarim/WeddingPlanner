@@ -35,5 +35,18 @@ export async function GET(request: NextRequest) {
     },
   });
   await supabase.auth.exchangeCodeForSession(code);
+  // Team auto-link (Phase 15): magic-link and verification land here, so
+  // passwordless teammates claim their invites on this path too.
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user?.email) {
+      const { claimTeamInvites } = await import('@/lib/db/team-invites');
+      await claimTeamInvites(user.id, user.email);
+    }
+  } catch {
+    // Auth already succeeded; invite linking is best-effort.
+  }
   return response;
 }

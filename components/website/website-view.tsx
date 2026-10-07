@@ -2,14 +2,15 @@
  * Public website renderer — Phase 4, localized in Phase 6 (server only:
  * zero client JavaScript on guest pages for mobile-network performance).
  * Renders enabled website sections in order under the resolved theme.
- * Engagement sections (guestbook, photo wall, songs, games) and RSVP render
- * as tasteful placeholders until their phases ship.
+ * Engagement sections render live content: guestbook, photo wall, songs,
+ * quiz/vote games with results, and RSVP.
  */
 import Image from 'next/image';
 import type { CSSProperties } from 'react';
 import { Suspense } from 'react';
 import { themeToCssVars, type ThemeTokens } from '@/lib/themes/tokens';
 import { sectionLabel, type SectionConfig } from '@/lib/invitation/sections';
+import type { PublicGame } from '@/lib/engagement/quiz';
 import type { WebsiteContent } from '@/lib/website/content';
 import { formatDateTime, t } from '@/lib/i18n/dict';
 import { isRtlLocale } from '@/lib/i18n/languages';
@@ -17,10 +18,12 @@ import { MonogramMark } from '@/components/monogram/monogram-mark';
 import { RegistryCard } from '@/components/website/registry-card';
 import {
   CapsuleForm,
+  GameVoteForm,
   GuestbookForm,
   PhotoUploadForm,
   SongForm,
 } from '@/components/website/engagement-forms';
+import type { PublicGameQuestion } from '@/lib/engagement/quiz';
 import { PhotoWallLive } from '@/components/website/photo-wall';
 import { LanguageSwitcher } from '@/components/i18n/language-switcher';
 
@@ -45,7 +48,7 @@ export interface WebsiteViewData {
   gallery: { id: string; url: string; label: string | null }[];
   guestbook: { guest_name: string; message: string }[];
   songs: { guest_name: string; title: string; artist: string; message: string }[];
-  games: { kind: string; title: string; description: string }[];
+  games: PublicGame[];
   capsule: { guest_name: string; message: string }[];
   welcomeVideoUrl: string | null;
   registry: RegistryDisplayItem[];
@@ -102,6 +105,41 @@ function Kicker({ label }: { label: string }) {
     >
       {label}
     </p>
+  );
+}
+
+/** Live result bars for one quiz/vote question (server-rendered tally). */
+function GameResults({ question, locale }: { question: PublicGameQuestion; locale: string }) {
+  if (question.tally.total === 0) return null;
+  return (
+    <div className="mt-3">
+      <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--wp-muted)' }}>
+        {t(locale, 'game.results')} · {question.tally.total}
+      </p>
+      <ul className="mt-2 flex flex-col gap-1.5">
+        {question.options.map((o, i) => (
+          <li key={i} className="text-sm">
+            <span>
+              {o}
+              {question.correct_option === i && (
+                <span className="ml-2 text-xs">✓ {t(locale, 'game.correctAnswer')}</span>
+              )}
+            </span>
+            <span
+              className="mt-1 block h-1.5 overflow-hidden rounded-full"
+              style={{ background: 'color-mix(in srgb, var(--wp-muted) 25%, transparent)' }}
+              role="img"
+              aria-label={`${question.tally.counts[i]} (${question.tally.pct[i]}%)`}
+            >
+              <span
+                className="block h-full rounded-full"
+                style={{ width: `${question.tally.pct[i]}%`, background: 'var(--wp-accent)' }}
+              />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -162,7 +200,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
           : data.weddingTitle;
       return (
         <section className="py-10 text-center">
-          <Kicker label={sectionLabel(id)} />
+          <Kicker label={sectionLabel(id, locale)} />
           <p className="mt-3 text-3xl" style={display}>
             {names}
           </p>
@@ -174,7 +212,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           <p className="mx-auto mt-4 max-w-xl whitespace-pre-line text-center leading-8">
             {c.story}
@@ -186,7 +224,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           <ul className="mx-auto mt-6 flex max-w-xl flex-col gap-4">
             {data.events.map((e) => {
@@ -237,7 +275,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           <ol className="mx-auto mt-6 max-w-xl">
             {timed.map((e) => (
@@ -279,7 +317,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       if (blocks.length === 0 && !eventPlaces && !c.mapUrl) return null;
       return (
         <section className="py-10 text-center">
-          <Kicker label={sectionLabel(id)} />
+          <Kicker label={sectionLabel(id, locale)} />
           {blocks.map((b, i) => (
             <p key={i} className="mx-auto mt-4 max-w-xl whitespace-pre-line leading-8">
               {b.text}
@@ -322,7 +360,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       if (!c.travel) return null;
       return (
         <section className="py-10 text-center">
-          <Kicker label={sectionLabel(id)} />
+          <Kicker label={sectionLabel(id, locale)} />
           <p className="mx-auto mt-4 max-w-xl whitespace-pre-line leading-8">{c.travel}</p>
         </section>
       );
@@ -330,7 +368,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       if (!c.accommodation) return null;
       return (
         <section className="py-10 text-center">
-          <Kicker label={sectionLabel(id)} />
+          <Kicker label={sectionLabel(id, locale)} />
           <p className="mx-auto mt-4 max-w-xl whitespace-pre-line leading-8">{c.accommodation}</p>
         </section>
       );
@@ -338,7 +376,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       if (!c.menuNote && !c.dietaryNote) return null;
       return (
         <section className="py-10 text-center">
-          <Kicker label={sectionLabel(id)} />
+          <Kicker label={sectionLabel(id, locale)} />
           {c.menuNote && (
             <p className="mx-auto mt-4 max-w-xl whitespace-pre-line leading-8">{c.menuNote}</p>
           )}
@@ -357,7 +395,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           <dl className="mx-auto mt-6 flex max-w-xl flex-col gap-4">
             {c.faq.map((f, i) => (
@@ -385,7 +423,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       if (data.registry.length === 0) {
         return (
           <section className="py-10 text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
             {c.registryNote ? (
               <p className="mx-auto mt-4 max-w-xl whitespace-pre-line leading-8">{c.registryNote}</p>
             ) : (
@@ -399,7 +437,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
             {c.registryNote && (
               <p className="mx-auto mt-4 max-w-xl whitespace-pre-line leading-8">{c.registryNote}</p>
             )}
@@ -416,7 +454,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           <div className="mx-auto mt-6 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-3">
             {data.gallery.map((g) => (
@@ -443,7 +481,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           {data.guestbook.length > 0 && (
             <ul className="mx-auto mt-6 flex max-w-xl flex-col gap-4">
@@ -472,7 +510,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           <PhotoWallLive initial={data.gallery} />
           <PhotoUploadForm weddingId={data.weddingId} />
@@ -482,7 +520,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           {data.songs.length > 0 && (
             <ul className="mx-auto mt-6 flex max-w-xl flex-col gap-3">
@@ -519,12 +557,12 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
           </div>
           <ul className="mx-auto mt-6 flex max-w-xl flex-col gap-4">
-            {data.games.map((g, i) => (
+            {data.games.map((g) => (
               <li
-                key={i}
+                key={g.id}
                 className="px-6 py-5"
                 style={{
                   background: 'var(--wp-surface)',
@@ -541,6 +579,18 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
                 {g.description && (
                   <p className="mt-2 whitespace-pre-line text-sm leading-7">{g.description}</p>
                 )}
+                {g.questions.map((q) => (
+                  <div key={q.id} className="mt-4 border-t pt-4" style={{ borderColor: 'color-mix(in srgb, var(--wp-muted) 25%, transparent)' }}>
+                    <p className="font-medium leading-7">{q.question}</p>
+                    <GameResults question={q} locale={locale} />
+                    <GameVoteForm
+                      weddingId={data.weddingId}
+                      questionId={q.id}
+                      options={q.options}
+                      locale={locale}
+                    />
+                  </div>
+                ))}
               </li>
             ))}
           </ul>
@@ -550,7 +600,7 @@ function WebsiteSection({ id, data }: { id: string; data: WebsiteViewData }) {
       return (
         <section className="py-10">
           <div className="text-center">
-            <Kicker label={sectionLabel(id)} />
+            <Kicker label={sectionLabel(id, locale)} />
             <p className="mx-auto mt-2 max-w-xl text-sm" style={muted}>
               Sealed notes for the future — they open on their dates.
             </p>

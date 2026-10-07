@@ -4,9 +4,11 @@ import { useActionState } from 'react';
 import {
   createAlbum,
   createGame,
+  createQuestion,
   saveVows,
   type AlbumState,
   type GameState,
+  type QuestionState,
   type VowState,
 } from '@/lib/db/engagement';
 import { GAME_KINDS, gameKindLabel } from '@/lib/engagement/validation';
@@ -54,6 +56,27 @@ export function GameForm({ weddingId }: { weddingId: string }) {
       {state.error && <p className="text-sm text-red-700 dark:text-red-400">{state.error}</p>}
       <button type="submit" disabled={pending} className={btnClass}>
         {pending ? 'Adding…' : '+ Add game'}
+      </button>
+    </form>
+  );
+}
+
+export function QuestionForm({ weddingId, gameId }: { weddingId: string; gameId: string }) {
+  const [state, formAction, pending] = useActionState<QuestionState, FormData>(
+    createQuestion.bind(null, weddingId, gameId),
+    {},
+  );
+  return (
+    <form action={formAction} className="mt-2 flex flex-col gap-2 rounded-xl border border-black/10 p-3 dark:border-white/10">
+      <input name="question" required maxLength={300} placeholder="Question — e.g. Where was our first date?" className={inputClass} aria-label="Question text" />
+      <textarea name="options" required rows={3} maxLength={1100} placeholder={'One option per line (2–8)…\nParis\nRome\nLisbon'} className={inputClass} aria-label="Options, one per line" />
+      <div className="flex items-center gap-2">
+        <input name="correctOption" inputMode="numeric" pattern="[0-9]*" maxLength={1} placeholder="–" className={`${inputClass} w-16`} aria-label="Correct option number (blank for polls)" />
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">Correct option 1–8, blank for a pure vote.</span>
+      </div>
+      {state.error && <p className="text-sm text-red-700 dark:text-red-400">{state.error}</p>}
+      <button type="submit" disabled={pending} className={btnClass}>
+        {pending ? 'Adding…' : '+ Add question'}
       </button>
     </form>
   );

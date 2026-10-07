@@ -14,9 +14,9 @@ and tested.
 
 # Overall Status
 
-**Current phase:** Phase 14 --- Final Product Audit (`COMPLETE`)
+**Current phase:** Phase 15 --- Deferred Product Gaps (`COMPLETE` — verified live 2026-10-07: 124/124 tests on migrations 0001–0018; typecheck + lint + build green)
 
-**Overall completion:** 100%
+**Overall completion:** 100% (Phases 0–15)
 
 **Production ready:** No
 
@@ -366,6 +366,25 @@ Status: `COMPLETE` (verified live 2026-10-07: 112/112 tests + 5/5 hardening jour
 
 ------------------------------------------------------------------------
 
+# Phase 15 --- Deferred Product Gaps
+
+Status: `COMPLETE` (verified live 2026-10-07: 124/124 tests on migrations 0001–0018 incl. vote uniqueness/unpublished-denial, payment trigger rollup reversal, invite claim flow; typecheck + lint + build green)
+
+-   [x] Quiz/vote questions on games (2–8 options, scored or poll mode)
+-   [x] Anonymous voting + live result tallies + correct-answer reveal
+-   [x] Game visibility toggle (Show/Hide)
+-   [x] Wedding-date-based budget template + seed action
+-   [x] Vendor payment line items + atomic paid rollup + export dataset
+-   [x] Team invites table + auto-link on sign-in/sign-up/callback + pending UI
+-   [x] Section-label key pass (`site.section.*`, 20 keys × 32 locales)
+-   [x] Game strings (`game.*`, 6 keys × 32 locales)
+-   [x] Dashboard hub translation (`dash.*`, 40 keys × 32 locales, admin locale)
+-   [x] Dashboard website preview renders live engagement
+-   [x] Unit tests (quiz, budget template, export, section labels)
+-   [x] Live verification (migrations 0016–0018 applied 2026-10-07)
+
+------------------------------------------------------------------------
+
 # Phase 14 --- Final Product Audit
 
 Status: `COMPLETE` (2026-10-07: mega-journey 15/15 live, integrity clean, 112/112 tests + production build green, docs rewritten)
@@ -395,7 +414,7 @@ Status: `COMPLETE` (2026-10-07: mega-journey 15/15 live, integrity clean, 112/11
 
 # Current Known Issues
 
-Last reviewed: Phase 14 final audit (2026-10-07). No critical or
+Last reviewed: Phase 15 implementation (2026-10-07). No critical or
 high-severity open problems. The following are accepted limitations and
 follow-ups, worst first.
 
@@ -410,18 +429,24 @@ follow-ups, worst first.
   button (see `docs/deployment.md`).
 - PDF rendering needs a Chromium binary on the app host (Vercel serverless
   excluded — use HTML preview + browser print there).
-- Concurrency races are possible on registry oversell and simultaneous
-  RSVP/check-in writes; acceptable at wedding scale, harden with atomic
-  RPCs if load demands (noted in code + `docs/performance-audit.md`).
+- Concurrency races are possible on simultaneous RSVP/check-in writes;
+  vendor payment totals are race-safe via the `sync_vendor_paid` trigger
+  (Phase 15). Registry oversell under concurrency remains possible until
+  hard inventory gating lands with payments.
+- Team invites record + auto-link only: no invite email is sent yet
+  (comms sends to guests, not team onboarding). The pending-invites list
+  shows who has access coming.
 
-## Deferred product scope
+## Deferred product scope (remaining)
 
-- Quiz/vote interactivity for games; wedding-date-based budget templates;
-  per-payment vendor line items; team invite auto-link on registration;
-  full couple-dashboard translation (guest surfaces are fully translated);
-  structural section labels stay English.
-- Dashboard website preview shows engagement placeholders (live guest
-  content renders on the public site).
+- Dashboard page-level translation beyond the hub: the wedding hub
+  (nav, team, invites) renders in the admin's profile locale, and all
+  guest surfaces + website section kickers are translated — but deeper
+  dashboard pages (forms, dialogs, page copy) stay English. The `dash.*`
+  namespace is ready to extend.
+- Quiz/vote errors returned by server actions stay English (same as all
+  existing public-action errors); labels, buttons, and results are fully
+  translated.
 
 ## Environment notes (not product bugs)
 
@@ -486,6 +511,7 @@ Record important technical/product decisions here.
   2026-10-07    Stationery: themed HTML docs + Chromium PDF (A-series, safe margins, embedded fonts)    No migration (reads existing data); serverless needs external render later    12
   2026-10-07    Hardening: plans enforced at creation; append-only audit; static RLS audit in suite    Monitoring/analytics abstracted (console now, vendors later); indexes audited    13
   2026-10-07    Audit: locale chain demoted issuance hint; form inputs labelled; integrity clean    Mega-journey 15/15; README + deployment docs rewritten    14
+  2026-10-07    Phase 15: game questions/votes (0016), vendor payments + trigger rollup (0017), team invites + auto-link (0018), budget template, section/dash key pass (66 keys × 32 locales), live preview engagement    15
 
 ------------------------------------------------------------------------
 
@@ -512,6 +538,10 @@ Record meaningful implementation changes.
   2026-10-07    Phase 13 verified live: migration 0015 applied, 112/112 tests + 5/5 hardening journey pass   13
   2026-10-07    Phase 14 audit: mega-journey 15/15, integrity clean, docs rewritten (no migration)   14
   2026-10-06    Global light/dark toggle (next-themes, class strategy, persisted) + dark variants across all pages   2
+  2026-10-07    Live re-verification: 112/112 tests pass live (no migration); added 90s timeout to tenancy + guest-hub integration suites to match other live suites; typecheck + lint + build green   14
+  2026-10-07    Phase 15 code complete: 109 unit tests pass, typecheck + lint + build green; migrations 0016–0018 written, awaiting apply for live verification   15
+  2026-10-07    Phase 15 hardening: schema-guard degrades new-table reads to empty + names pending migration on writes (PGRST205); vendors/engage/hub pages no longer 500 pre-migration   15
+  2026-10-07    Phase 15 verified live: migrations 0016–0018 applied, 124/124 tests pass (fixed 2 test-only issues: public-read assertion, wedding-scoped reads)   15
 
 ------------------------------------------------------------------------
 
