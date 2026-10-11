@@ -63,11 +63,20 @@ describe.skipIf(!hasEnv)(
       expect(wErr).toBeNull();
       if (!wedding) throw new Error('setup failed');
 
-      const { error: eErr } = await a.client.from('events').insert({
-        wedding_id: wedding.id,
-        name: 'Ceremony',
-        timezone: 'UTC',
-      });
+      const { error: eErr } = await a.client.from('events').insert([
+        {
+          wedding_id: wedding.id,
+          name: 'Public Ceremony',
+          timezone: 'UTC',
+          visibility: 'public',
+        },
+        {
+          wedding_id: wedding.id,
+          name: 'Family Dinner',
+          timezone: 'UTC',
+          visibility: 'invited-only',
+        },
+      ]);
       expect(eErr).toBeNull();
 
       // Draft: anonymous users see nothing.
@@ -122,11 +131,24 @@ describe.skipIf(!hasEnv)(
         ).error,
       ).toBeNull();
 
-      // Published: wedding/events/monogram/site rows readable…
+      // Published: wedding/public events/monogram/site rows readable…
       const { data: seenWedding } = await pub.from('weddings').select('id').eq('id', wedding.id);
       expect(seenWedding ?? []).toHaveLength(1);
-      const { data: seenEvents } = await pub.from('events').select('id').eq('wedding_id', wedding.id);
-      expect((seenEvents ?? []).length).toBeGreaterThan(0);
+      // …but only public events: invited-only stays off the public site…
+      const { data: seenEvents } = await pub
+        .from('events')
+        .select('name')
+        .eq('wedding_id', wedding.id);
+      expect((seenEvents ?? []).map((e) => e.name)).toEqual(['Public Ceremony']);
+      // …while members still see both.
+      const { data: memberEvents } = await a.client
+        .from('events')
+        .select('name')
+        .eq('wedding_id', wedding.id);
+      expect((memberEvents ?? []).map((e) => e.name).sort()).toEqual([
+        'Family Dinner',
+        'Public Ceremony',
+      ]);
       const { data: seenSite } = await pub
         .from('wedding_websites')
         .select('wedding_id')

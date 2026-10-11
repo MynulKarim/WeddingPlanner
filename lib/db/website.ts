@@ -287,6 +287,7 @@ export async function getPublishedWebsite(slug: string): Promise<PublishedWebsit
     .from('events')
     .select('id, name, starts_at, timezone, venue, address, description, dress_code')
     .eq('wedding_id', w.id)
+    .eq('visibility', 'public')
     .order('starts_at', { ascending: true, nullsFirst: false });
 
   const { data: monogram } = await supabase

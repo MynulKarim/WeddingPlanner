@@ -47,7 +47,7 @@ Optional (features degrade gracefully to NoOp when absent):
 
 1. Create the project, note URL + anon + service-role keys.
 2. SQL Editor → run `supabase/migrations/*.sql` **in numeric order**
-   (0001 → 0020 as shipped; always run every file in order).
+   (all files in order, currently 0001 → 0022).
 3. Authentication → Sign In / Up: enable Email, allow new signups, confirm
    email ON (recommended).
 4. Storage: the `wedding-media` bucket is created by migration 0006

@@ -14,7 +14,7 @@ and tested.
 
 # Overall Status
 
-**Current phase:** Phase 16 --- Reliability Hardening (`COMPLETE` — verified live 2026-10-07: 134/134 tests on migrations 0001–0021; typecheck + lint + build green)
+**Current phase:** Phase 16 --- Reliability Hardening (`COMPLETE` — verified live 2026-10-07: 134/134 tests on migrations 0001–0022 incl. event-visibility enforcement; typecheck + lint + build green)
 
 **Overall completion:** 100% (Phases 0–16)
 
@@ -368,7 +368,7 @@ Status: `COMPLETE` (verified live 2026-10-07: 112/112 tests + 5/5 hardening jour
 
 # Phase 16 --- Reliability Hardening
 
-Status: `COMPLETE` (verified live 2026-10-07: 134/134 tests on migrations 0001–0021 incl. 5-way anon oversell race, claim overlap/stale-recovery, RSVP deadline re-check, tenant-guarded check-in; typecheck + lint + build green)
+Status: `COMPLETE` — event-visibility hardening verified live 2026-10-07 (134/134 on 0001–0022; anon sees only public events, members see both; was `COMPLETE` at 134/134 on 0001–0021 before the user-testing finding)
 
 -   [x] Atomic dispatch claims (`sending` state + `FOR UPDATE SKIP LOCKED`)
 -   [x] Secure cron endpoint (`Bearer CRON_SECRET`, Vercel Cron every 5 min)
@@ -379,6 +379,8 @@ Status: `COMPLETE` (verified live 2026-10-07: 134/134 tests on migrations 0001�
 -   [x] PDF preflight + fallback URL + studio print-via-preview + error taxonomy
 -   [x] Unit tests (cron auth, claim/deliver/fallback, Chromium matcher)
 -   [x] Live verification (migrations 0019–0021 applied 2026-10-07)
+-   [x] Event-visibility fix (user-testing finding: invited-only ignored publicly; 0022 + app filter)
+-   [x] Live re-verification (migration 0022 applied 2026-10-07; 134/134)
 
 ------------------------------------------------------------------------
 
@@ -564,6 +566,8 @@ Record meaningful implementation changes.
   2026-10-07    Phase 15 verified live: migrations 0016–0018 applied, 124/124 tests pass (fixed 2 test-only issues: public-read assertion, wedding-scoped reads)   15
   2026-10-07    Phase 16 code complete: unit tests pass, typecheck + lint + build green; migrations 0019–0021 written, awaiting apply for live verification   16
   2026-10-07    Phase 16 verified live: migrations 0019–0021 applied, 134/134 tests pass (incl. anon oversell race after 0021 definer fix)   16
+  2026-10-07    Phase 16 event-visibility fix: invited-only events were world-readable when published (user-testing finding); 0022 tightens RLS + app filter, website test updated   16
+  2026-10-07    Phase 16 verified live (final): migration 0022 applied, 134/134 tests pass incl. public/invited-only event separation   16
 
 ------------------------------------------------------------------------
 
